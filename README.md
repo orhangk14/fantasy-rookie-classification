@@ -134,6 +134,25 @@ Models: Gradient Boosting Regressor (PPG), Gradient Boosting Classifier (Tier wi
 
 ---
 
+## ⚠️ Known Limitations
+
+### Archetype Classification Defaults
+When combine data (weight, 40-yard dash) is missing for a player, the archetype classifier falls back to defaults:
+- **RB** defaults to "Speed Back" if weight is unavailable and under 220 lbs threshold can't be evaluated
+- **WR** defaults to "Possession" if height data is missing
+- **TE** defaults to "Blocking TE" if reception data is below threshold
+
+This affects some late-round picks and players who did not participate in the NFL Combine. For example, Ollie Gordon (2025) was classified as "Speed Back" despite being a 213 lb power runner because his combine data was not available in the dataset.
+
+### College Stats
+The nfl_data_py package does not provide college statistics. For the 2025 prospect class, college career stats were manually sourced from Sports Reference for the top ~50 prospects. Players without manual college stats may have less accurate predictions.
+
+### Data Availability
+- 2025 NFL season stats are not yet available in nfl_data_py, so the training data covers 2015-2024 seasons
+- The model is trained on historical NFL career stats from draft picks data, which may differ from true college production stats for some players
+
+---
+
 ## 🏈 PPR Scoring
 
 | Stat | Points |
@@ -156,7 +175,7 @@ Models: Gradient Boosting Regressor (PPG), Gradient Boosting Classifier (Tier wi
 - Add 2025 NFL season data to training set once available in nfl_data_py
 - Scrape college stats programmatically for future classes
 - Add advanced metrics (PFF grades, EPA) if data becomes available
-- Improve model with ensemble methods and hyperparameter tuning
+- Improve archetype classification with more data points
 - Add dynasty league trade value calculator
 - Deploy Streamlit app to cloud
 

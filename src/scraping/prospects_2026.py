@@ -98,18 +98,19 @@ def pull_2025_prospects() -> pd.DataFrame:
                      "receptions", "rec_yards", "rec_tds"]
     d25 = d25.drop(columns=[c for c in nfl_stat_cols if c in d25.columns], errors="ignore")
 
-    # combine data
+    
+    # combine data - merge on player name since pfr_id is None for 2025
     print("Pulling combine data...")
     combine = nfl.import_combine_data()
     c25 = combine[combine["season"] == 2025]
     c25 = c25[c25["pos"].isin(POSITIONS)]
-    combine_cols = ["pfr_id", "ht", "wt", "forty", "bench", "vertical",
+    combine_cols = ["player_name", "ht", "wt", "forty", "bench", "vertical",
                     "broad_jump", "cone", "shuttle"]
     c25 = c25[[c for c in combine_cols if c in c25.columns]]
-    c25 = c25.drop_duplicates(subset=["pfr_id"])
+    c25 = c25.rename(columns={"player_name": "player"})
+    c25 = c25.drop_duplicates(subset=["player"])
 
-    d25 = d25.merge(c25, on="pfr_id", how="left")
-    d25["ht_inches"] = d25["ht"].apply(height_to_inches)
+    d25 = d25.merge(c25, on="player", how="left")
 
     # overlay real college stats
     print("Overlaying real college stats...")
