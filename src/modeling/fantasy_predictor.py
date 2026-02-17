@@ -193,6 +193,8 @@ def train_tier_model(df: pd.DataFrame, pos: str):
 
 def predict_player(player_data: dict, pos: str) -> dict:
     """Predict PPG and tier for a single player."""
+    from src.utils.scoring import tier_label
+
     ppg_bundle = joblib.load(MODELS_DIR / f"{pos.lower()}_ppg_model.joblib")
     tier_bundle = joblib.load(MODELS_DIR / f"{pos.lower()}_tier_model.joblib")
 
@@ -214,9 +216,12 @@ def predict_player(player_data: dict, pos: str) -> dict:
     tier_X_scaled = tier_scaler.transform(tier_X)
 
     ppg_pred = ppg_model.predict(ppg_X_scaled)[0]
-    tier_probs = tier_model.predict_proba(tier_X_scaled)[0]
-    tier_pred = tier_le.inverse_transform([tier_model.predict(tier_X_scaled)[0]])[0]
 
+    # derive tier from predicted PPG instead of separate model
+    tier_pred = tier_label(ppg_pred, pos)
+
+    # still get probabilities from tier model for display
+    tier_probs = tier_model.predict_proba(tier_X_scaled)[0]
     tier_prob_dict = dict(zip(tier_le.classes_, tier_probs.round(3)))
 
     return {
@@ -224,7 +229,6 @@ def predict_player(player_data: dict, pos: str) -> dict:
         "predicted_tier": tier_pred,
         "tier_probabilities": tier_prob_dict
     }
-
 
 def run():
     """Train and save all models."""
