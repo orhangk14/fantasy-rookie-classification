@@ -1,4 +1,3 @@
-cat > README.md << 'EOF'
 # 🏈 Fantasy Rookie Draft Prediction Model
 
 A machine learning-powered tool that predicts NFL rookie fantasy performance (PPR scoring) based on draft capital, physical measurables, and college production. Includes player archetype classification, comparable player finder, model validation against the 2025 rookie class, and an interactive Streamlit dashboard.
