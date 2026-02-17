@@ -50,7 +50,8 @@ page = st.sidebar.radio("Navigate", [
     "🔍 Prospect Explorer",
     "📊 Comparables",
     "📈 Historical Data",
-    "🎯 Custom Prospect"
+    "🎯 Custom Prospect",
+    "✅ Validation"
 ])
 
 # ── Color Maps ─────────────────────────────────────────
@@ -508,3 +509,120 @@ elif page == "🎯 Custom Prospect":
             display = ["player", "draft_year", "archetype", "ppg", "tier", "similarity"]
             available = [c for c in display if c in comps.columns]
             st.dataframe(comps[available].reset_index(drop=True), use_container_width=True, hide_index=True)
+
+# ══════════════════════════════════════════════════════════
+# PAGE: Validation
+# ══════════════════════════════════════════════════════════
+elif page == "✅ Validation":
+    st.title("✅ 2025 Rookie Class — Model Validation")
+    st.markdown("How our pre-draft predictions compared to actual rookie season results.")
+    st.markdown("---")
+
+    val_path = DATA_PROCESSED / "validation_2025.csv"
+    if not val_path.exists():
+        st.warning("Validation data not found. Run: python -m src.modeling.validate_2025")
+    else:
+        val = pd.read_csv(val_path)
+
+        # summary metrics
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Players Validated", len(val))
+        col2.metric("MAE (PPG)", f"{val['ppg_abs_error'].mean():.2f}")
+        col3.metric("Median Error", f"{val['ppg_abs_error'].median():.2f}")
+        col4.metric("Tier Accuracy", f"{val['tier_correct'].mean():.1%}")
+
+        st.markdown("---")
+
+        # by position
+        st.subheader("Accuracy by Position")
+        pos_stats = val.groupby("pos").agg(
+            players=("player", "count"),
+            mae=("ppg_abs_error", "mean"),
+            tier_acc=("tier_correct", "mean")
+        ).round(3).reset_index()
+        pos_stats["tier_acc"] = (pos_stats["tier_acc"] * 100).round(1).astype(str) + "%"
+        pos_stats["mae"] = pos_stats["mae"].round(2)
+        st.dataframe(pos_stats, use_container_width=True, hide_index=True)
+
+        st.markdown("---")
+
+        # predicted vs actual scatter
+        st.subheader("Predicted vs Actual PPG")
+        fig = go.Figure()
+
+        for pos in ["QB", "RB", "WR", "TE"]:
+            subset = val[val["pos"] == pos]
+            fig.add_trace(go.Scatter(
+                x=subset["predicted_ppg"],
+                y=subset["actual_ppg"],
+                mode="markers",
+                name=pos,
+                text=subset["player"],
+                hovertemplate="<b>%{text}</b><br>Predicted: %{x:.1f}<br>Actual: %{y:.1f}<extra></extra>"
+            ))
+
+        max_val = max(val["predicted_ppg"].max(), val["actual_ppg"].max()) + 2
+        fig.add_trace(go.Scatter(
+            x=[0, max_val], y=[0, max_val],
+            mode="lines",
+            line=dict(dash="dash", color="gray"),
+            name="Perfect",
+            showlegend=False
+        ))
+
+        fig.update_layout(
+            xaxis_title="Predicted PPG",
+            yaxis_title="Actual PPG",
+            height=500
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("---")
+
+        # filter by position
+        st.subheader("Detailed Results")
+        pos_filter = st.selectbox("Filter Position", ["All", "QB", "RB", "WR", "TE"])
+
+        if pos_filter != "All":
+            val_filtered = val[val["pos"] == pos_filter]
+        else:
+            val_filtered = val
+
+        display_cols = ["player", "pos", "projected_pick", "predicted_ppg",
+                        "actual_ppg", "ppg_error", "predicted_tier",
+                        "actual_tier", "tier_correct"]
+        available = [c for c in display_cols if c in val_filtered.columns]
+
+        st.dataframe(
+            val_filtered[available].sort_values("actual_ppg", ascending=False).reset_index(drop=True),
+            use_container_width=True,
+            column_config={
+                "predicted_ppg": st.column_config.NumberColumn("Pred PPG", format="%.2f"),
+                "actual_ppg": st.column_config.NumberColumn("Actual PPG", format="%.2f"),
+                "ppg_error": st.column_config.NumberColumn("Error", format="%.2f"),
+                "tier_correct": st.column_config.CheckboxColumn("Tier ✅"),
+                "projected_pick": st.column_config.NumberColumn("Pick", format="%d"),
+            }
+        )
+
+        # biggest hits and misses
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("🎯 Best Predictions")
+            best = val.nsmallest(10, "ppg_abs_error")
+            for _, row in best.iterrows():
+                st.markdown(f"**{row['player']}** ({row['pos']}) — "
+                           f"Pred: {row['predicted_ppg']:.1f}, "
+                           f"Actual: {row['actual_ppg']:.1f} "
+                           f"(off by {row['ppg_abs_error']:.1f})")
+
+        with col2:
+            st.subheader("😬 Biggest Misses")
+            worst = val.nlargest(10, "ppg_abs_error")
+            for _, row in worst.iterrows():
+                st.markdown(f"**{row['player']}** ({row['pos']}) — "
+                           f"Pred: {row['predicted_ppg']:.1f}, "
+                           f"Actual: {row['actual_ppg']:.1f} "
+                           f"(off by {row['ppg_abs_error']:.1f})")

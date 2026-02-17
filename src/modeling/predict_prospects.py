@@ -11,7 +11,8 @@ def load_prospects() -> pd.DataFrame:
     """Load 2026 prospects."""
     path = DATA_RAW / "prospects_2026.csv"
     df = pd.read_csv(path)
-    df["ht_inches"] = df["ht"].apply(height_to_inches)
+    if "ht_inches" not in df.columns:
+        df["ht_inches"] = df["ht"].apply(height_to_inches)
     return df
 
 
@@ -25,7 +26,7 @@ def load_historical() -> pd.DataFrame:
 
 def classify_prospect_archetype(row: pd.Series) -> str:
     """Classify archetype for a prospect based on college stats."""
-    pos = row["pos"]
+    pos = row.get("pos", "")
 
     if pos == "QB":
         rush_att = row.get("college_rush_att", 0) or 0
@@ -38,7 +39,6 @@ def classify_prospect_archetype(row: pd.Series) -> str:
         wt = row.get("wt", 0) or 0
         rec = row.get("college_rec", 0) or 0
         rush = row.get("college_rush_att", 0) or 0
-
         rec_ratio = rec / rush if rush > 0 else 0
 
         if rec_ratio >= 0.15 and rush >= 400:
@@ -77,7 +77,7 @@ def classify_prospect_archetype(row: pd.Series) -> str:
 
 
 def run():
-    """Predict fantasy outcomes for all 2026 prospects."""
+    """Predict fantasy outcomes for all prospects."""
     prospects = load_prospects()
     historical = load_historical()
 
@@ -89,20 +89,22 @@ def run():
         player = row["player"]
         pos = row["pos"]
 
-        # classify archetype
+        if pd.isna(player):
+            continue
+
         archetype = classify_prospect_archetype(row)
 
-        # predict fantasy
-        player_data = row.to_dict()
-        prediction = predict_player(player_data, pos)
+        try:
+            player_data = row.to_dict()
+            prediction = predict_player(player_data, pos)
+        except Exception as e:
+            print(f"  Error predicting {player}: {e}")
+            continue
 
-        # find comps
         comps = find_comparables(
             row, historical, pos, archetype,
             top_n=3, same_archetype_only=True
         )
-
-        # fallback to cross-archetype if not enough comps
         if comps.empty or len(comps) < 3:
             comps = find_comparables(
                 row, historical, pos, archetype,
@@ -115,9 +117,9 @@ def run():
         result = {
             "player": player,
             "pos": pos,
-            "college": row["college"],
+            "college": row.get("college", ""),
             "archetype": archetype,
-            "projected_pick": row["pick"],
+            "projected_pick": row.get("pick", 0),
             "predicted_ppg": prediction["predicted_ppg"],
             "predicted_tier": prediction["predicted_tier"],
             "tier_probs": prediction["tier_probabilities"],
@@ -135,6 +137,8 @@ def run():
     # display
     for pos in ["QB", "RB", "WR", "TE"]:
         subset = results_df[results_df["pos"] == pos]
+        if subset.empty:
+            continue
         print(f"\n{'='*70}")
         print(f"  {pos}s")
         print(f"{'='*70}")
@@ -149,7 +153,6 @@ def run():
                   f"{row['comp_2']} ({row['comp_2_ppg']}), "
                   f"{row['comp_3']} ({row['comp_3_ppg']})")
 
-    # save
     path = DATA_PROCESSED / "prospect_predictions.csv"
     results_df.to_csv(path, index=False)
     print(f"\nSaved to {path}")

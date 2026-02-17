@@ -8,26 +8,31 @@ from src.utils.config import DATA_PROCESSED, MODELS_DIR, RANDOM_STATE, TEST_SIZE
 from src.modeling.comparable_finder import height_to_inches
 
 
-FEATURE_COLS = {
-    "QB": [
-        "round", "pick", "age", "ht_inches", "wt", "forty",
-        "college_pass_att", "college_pass_yd", "college_pass_td", "college_int",
-        "college_rush_att", "college_rush_yd", "college_rush_td"
-    ],
-    "RB": [
-        "round", "pick", "age", "ht_inches", "wt", "forty",
-        "college_rush_att", "college_rush_yd", "college_rush_td",
-        "college_rec", "college_rec_yd", "college_rec_td"
-    ],
-    "WR": [
-        "round", "pick", "age", "ht_inches", "wt", "forty",
-        "college_rec", "college_rec_yd", "college_rec_td",
-        "college_rush_att", "college_rush_yd"
-    ],
-    "TE": [
-        "round", "pick", "age", "ht_inches", "wt", "forty",
-        "college_rec", "college_rec_yd", "college_rec_td"
-    ]
+# features for historical model (no college stats available reliably)
+HIST_FEATURES = {
+    "QB": ["round", "pick", "age", "ht_inches", "wt", "forty",
+           "bench", "vertical", "broad_jump", "cone", "shuttle"],
+    "RB": ["round", "pick", "age", "ht_inches", "wt", "forty",
+           "bench", "vertical", "broad_jump", "cone", "shuttle"],
+    "WR": ["round", "pick", "age", "ht_inches", "wt", "forty",
+           "bench", "vertical", "broad_jump", "cone", "shuttle"],
+    "TE": ["round", "pick", "age", "ht_inches", "wt", "forty",
+           "bench", "vertical", "broad_jump", "cone", "shuttle"]
+}
+
+# features for prospect prediction (includes real college stats)
+PROSPECT_FEATURES = {
+    "QB": ["round", "pick", "age", "ht_inches", "wt", "forty",
+           "college_pass_att", "college_pass_yd", "college_pass_td", "college_int",
+           "college_rush_att", "college_rush_yd", "college_rush_td"],
+    "RB": ["round", "pick", "age", "ht_inches", "wt", "forty",
+           "college_rush_att", "college_rush_yd", "college_rush_td",
+           "college_rec", "college_rec_yd", "college_rec_td"],
+    "WR": ["round", "pick", "age", "ht_inches", "wt", "forty",
+           "college_rec", "college_rec_yd", "college_rec_td",
+           "college_rush_att", "college_rush_yd"],
+    "TE": ["round", "pick", "age", "ht_inches", "wt", "forty",
+           "college_rec", "college_rec_yd", "college_rec_td"]
 }
 
 
@@ -52,7 +57,7 @@ def train_ppg_model(df: pd.DataFrame, pos: str):
     """Train a PPG regression model for a position."""
     subset = df[df["pos"] == pos].copy()
 
-    features = FEATURE_COLS[pos]
+    features = HIST_FEATURES[pos]
     available = [f for f in features if f in subset.columns]
 
     subset = subset.dropna(subset=["ppg"])
@@ -89,13 +94,13 @@ def train_ppg_model(df: pd.DataFrame, pos: str):
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # simplified model to prevent overfitting
+    # less regularized to allow higher predictions
     model = GradientBoostingRegressor(
-        n_estimators=100,
-        max_depth=2,
+        n_estimators=150,
+        max_depth=3,
         learning_rate=0.05,
-        min_samples_leaf=10,
-        min_samples_split=15,
+        min_samples_leaf=5,
+        min_samples_split=10,
         subsample=0.8,
         random_state=RANDOM_STATE
     )
@@ -118,10 +123,10 @@ def train_ppg_model(df: pd.DataFrame, pos: str):
 
 
 def train_tier_model(df: pd.DataFrame, pos: str):
-    """Train a tier classification model for a position."""
+    """Train a tier classification model with class balancing."""
     subset = df[df["pos"] == pos].copy()
 
-    features = FEATURE_COLS[pos]
+    features = HIST_FEATURES[pos]
     available = [f for f in features if f in subset.columns]
 
     subset = subset.dropna(subset=["tier"])
@@ -150,32 +155,38 @@ def train_tier_model(df: pd.DataFrame, pos: str):
     le = LabelEncoder()
     y_encoded = le.fit_transform(y)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y_encoded, test_size=TEST_SIZE, random_state=RANDOM_STATE
+    # compute sample weights to handle class imbalance
+    class_counts = pd.Series(y_encoded).value_counts()
+    total = len(y_encoded)
+    n_classes = len(class_counts)
+    weights = np.array([total / (n_classes * class_counts[c]) for c in y_encoded])
+
+    X_train, X_test, y_train, y_test, w_train, w_test = train_test_split(
+        X, y_encoded, weights, test_size=TEST_SIZE, random_state=RANDOM_STATE
     )
 
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # simplified model to prevent overfitting
     model = GradientBoostingClassifier(
-        n_estimators=100,
-        max_depth=2,
+        n_estimators=150,
+        max_depth=3,
         learning_rate=0.05,
-        min_samples_leaf=10,
-        min_samples_split=15,
+        min_samples_leaf=5,
+        min_samples_split=10,
         subsample=0.8,
         random_state=RANDOM_STATE
     )
-    model.fit(X_train_scaled, y_train)
+    model.fit(X_train_scaled, y_train, sample_weight=w_train)
 
     train_score = model.score(X_train_scaled, y_train)
     test_score = model.score(X_test_scaled, y_test)
 
-    print(f"  {pos} Tier Model:")
+    print(f"  {pos} Tier Model (class balanced):")
     print(f"    Train Acc: {train_score:.3f}")
     print(f"    Test Acc:  {test_score:.3f}")
+    print(f"    Classes: {dict(zip(le.classes_, [int(c) for c in class_counts.sort_index().values]))}")
 
     return model, scaler, medians, usable, le
 
