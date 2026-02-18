@@ -430,6 +430,11 @@ elif page == "🎯 Custom Prospect":
             "ht_inches": ht_inches,
             "wt": wt,
             "forty": forty if forty > 0 else None,
+            "bench": None,
+            "vertical": None,
+            "broad_jump": None,
+            "cone": None,
+            "shuttle": None,
         }
 
         if pos == "QB":
